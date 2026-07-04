@@ -17,5 +17,4 @@ end
 
 defmodule Product do
   use DiscountExt
-  
 end
