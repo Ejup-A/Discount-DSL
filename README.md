@@ -1,4 +1,8 @@
-#  DiscountDsl A compile-time domain-specific language (DSL) built in Elixir for defining and executing flexible discount rules using macros. This project demonstrates advanced Elixir metaprogramming: macros, compile-time AST generation, module attributes, functional pipeline execution, rule-based engine design, and ExUnit testing. It behaves like a lightweight pricing engine similar to production rule systems used in e-commerce platforms.
+# DiscountDsl
+
+A compile-time domain-specific language (DSL) built in Elixir for defining and executing flexible discount rules using macros.
+
+This project demonstrates advanced Elixir metaprogramming: macros, compile-time AST generation, module attributes, functional pipeline execution, rule-based engine design, and ExUnit testing. It behaves like a lightweight pricing engine similar to production rule systems used in e-commerce platforms.
 
 Installation:
 
