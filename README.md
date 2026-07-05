@@ -1,91 +1,43 @@
 # DiscountDsl
 
-A compile-time domain-specific language (DSL) built in Elixir for defining and executing flexible discount rules using macros.
+A small, compile-time DSL in Elixir for defining and applying discount rules.
 
-This project demonstrates advanced Elixir metaprogramming: macros, compile-time AST generation, module attributes, functional pipeline execution, rule-based engine design, and ExUnit testing. It behaves like a lightweight pricing engine similar to production rule systems used in e-commerce platforms.
+> Instead of hardcoding pricing logic, you declare discounts with macros and run them through a deterministic rule pipeline.
 
-Installation:
+## Features
 
-def deps do
+- **Compile-time DSL**: discounts are registered when the using module is compiled.
+- **Simple rule model**: each discount has required product fields, a condition, and an action.
+- **Deterministic application order**: discounts are applied in the order they are registered.
+- **Safe validation**: a discount is skipped if the product is missing required fields.
+
+## Installation
+
+This project is a Mix library.
+
+```elixir
+# mix.exs
+
+defp deps do
   [
     {:discount_dsl, "~> 0.1.0"}
   ]
 end
+```
 
+Then:
+
+```bash
 mix deps.get
+```
 
-Core concept: instead of imperative logic like:
+## Usage
 
-if product.price > 100 do product.price * 0.9 end
+### 1) Define discounts
 
-You define:
+Create a module that `use`s `DiscountDsl` and declares discounts with the `discount/4` macro.
 
-discount(:over_100, [:price], :is_over_100?, :apply_10_percent_discount)
-
-Which compiles into:
-
-apply_discount(product)
-
-Architecture: DiscountDsl uses __using__/1 to import macros, registers @discounts, attaches @before_compile, stores rules via discount/4, and generates apply_discount/1 using Enum.reduce/3. Each rule validates required fields, evaluates condition functions, and executes action functions in sequence.
-
-Runtime flow: load @discounts → iterate rules → validate fields → run condition → apply action → pass updated product → return final result.
-
-# Implementation:
-
-defmodule DiscountDsl do
-  defmacro __using__(_opts) do
-    quote do
-      import unquote(__MODULE__)
-      Module.register_attribute(__MODULE__, :discounts, accumulate: true)
-      @before_compile unquote(__MODULE__)
-    end
-  end
-
-  defmacro __before_compile__(_env) do
-    quote do
-      def apply_discount(product) do
-        Enum.reduce(@discounts, product, fn discount, acc ->
-          apply_discount_rule(acc, discount)
-        end)
-      end
-
-      defp apply_discount_rule(product, {_, required_fields, condition_func, action_func}) do
-        case validate_and_apply(product, required_fields, condition_func) do
-          :apply -> apply(__MODULE__, action_func, [product])
-          :skip -> product
-        end
-      end
-
-      defp apply_discount_rule(product, _), do: product
-
-      defp validate_and_apply(product, required_fields, condition_func) do
-        if validate_product(product, required_fields) and apply(__MODULE__, condition_func, [product]) do
-          :apply
-        else
-          :skip
-        end
-      end
-
-      defp validate_product(product, required_fields) do
-        Enum.all?(required_fields, &Map.has_key?(product, &1))
-      end
-    end
-  end
-
-  defmacro discount(name, required_fields, condition, action) do
-    quote bind_quoted: [
-      name: name,
-      required_fields: required_fields,
-      condition: condition,
-      action: action
-    ] do
-      @discounts {name, required_fields, condition, action}
-    end
-  end
-end
-
-# Example usage:
-
+```elixir
 defmodule Discounts do
   use DiscountDsl
 
@@ -96,68 +48,53 @@ defmodule Discounts do
   discount(:electronics, [:price, :category], :is_electronics?, :apply_5_percent_discount)
   def is_electronics?(product), do: product.category == "Electronics"
   def apply_5_percent_discount(product), do: Map.update!(product, :price, &(&1 * 0.95))
-
-  discount(:free_shipping, [:price], :is_eligible_for_free_shipping?, :apply_free_shipping)
-  def is_eligible_for_free_shipping?(product), do: product.price > 50
-  def apply_free_shipping(product), do: Map.put(product, :free_shipping, true)
 end
+```
 
-# Usage:
+### 2) Apply discounts to a product
 
+```elixir
 product = %{price: 200, category: "Electronics"}
-Discounts.apply_discount(product)
+result  = Discounts.apply_discount(product)
+```
 
-# Tests:
+`apply_discount/1` returns the updated product after running all matching discounts.
 
-defmodule DiscountDslTest do
-  use ExUnit.Case
+## DSL Reference
 
-  defmodule DiscountsTest do
-    use DiscountDsl
+### `discount/4`
 
-    discount(:over_100, [:price], :is_over_100?, :apply_10_percent_discount)
-    def is_over_100?(product), do: product.price > 100
-    def apply_10_percent_discount(product), do: Map.update!(product, :price, &(&1 * 0.9))
+```elixir
+discount(name, required_fields, condition_function, action_function)
+```
 
-    discount(:electronics, [:price, :category], :is_electronics?, :apply_5_percent_discount)
-    def is_electronics?(product), do: product.category == "Electronics"
-    def apply_5_percent_discount(product), do: Map.update!(product, :price, &(&1 * 0.95))
+- `name`: an atom identifying the discount.
+- `required_fields`: list of keys that must exist in the product map.
+- `condition_function`: function name (atom) that receives the product and returns a boolean.
+- `action_function`: function name (atom) that receives the product and returns the updated product.
 
-    discount(:free_shipping, [:price], :is_eligible_for_free_shipping?, :apply_free_shipping)
-    def is_eligible_for_free_shipping?(product), do: product.price > 50
-    def apply_free_shipping(product), do: Map.put(product, :free_shipping, true)
-  end
+A discount is applied when:
+1. all `required_fields` are present in the product, and
+2. `condition_function(product)` returns `true`.
 
-  test "module loads" do
-    assert Code.ensure_loaded!(DiscountDsl)
-  end
+## How it works (high level)
 
-  test "single discount" do
-    product = %{price: 60, category: "Toys"}
-    assert DiscountsTest.apply_discount(product).free_shipping == true
-  end
+- When a module does `use DiscountDsl`, the DSL macro registers a list of discounts.
+- When compilation finishes, `apply_discount/1` is generated.
+- At runtime, `apply_discount/1` iterates through registered discounts and:
+  - validates required fields,
+  - evaluates the condition,
+  - applies the action if the condition passes.
 
-  test "multiple discounts" do
-    product = %{price: 200, category: "Electronics"}
-    result = DiscountsTest.apply_discount(product)
-    assert result.price == 171
-    assert result.free_shipping == true
-  end
+## Testing
 
-  test "no discounts" do
-    product = %{price: 40, category: "Toys"}
-    assert DiscountsTest.apply_discount(product) == product
-  end
+Run the project tests with:
 
-  test "edge case" do
-    product = %{price: 100, category: "Toys"}
-    result = DiscountsTest.apply_discount(product)
-    assert result.price == 100
-    assert result.free_shipping == true
-  end
+```bash
+mix test
+```
 
-  test "missing fields" do
-    product = %{category: "Toys"}
-    assert DiscountsTest.apply_discount(product) == product
-  end
-end
+## License
+
+MIT
+
